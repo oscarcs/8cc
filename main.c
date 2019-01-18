@@ -1,11 +1,31 @@
 // Copyright 2012 Rui Ueyama. Released under the MIT license.
 
+// libgen.h is a header file that, uh, 'for historical reasons', provides 
+// definitions for pattern matching functions. It's part of POSIX.
 #include <libgen.h>
+
+// General purpose standard library functions for the C programming language.
+// Includes a random grab-bag of stuff.
 #include <stdlib.h>
+
+// String functions. Also memory management functions like memcpy() and 
+// memset(), for some reason. 
 #include <string.h>
+
+// The 'sys' directory (usually, as a matter of convention) contains 
+// system-specific header files. This one defines data types on UNIX systems.
 #include <sys/types.h>
+
+// Defines constants for use with waitpid(), which is a function that waits for
+// a child process to stop or terminate.
 #include <sys/wait.h>
+
+// Defines a bunch of UNIX-related constants, including NULL, F_OK (for files),
+// and access to the POSIX API. Usually this just means wrappers over some
+// system call interfaces. Pretty important. 
 #include <unistd.h>
+
+// Include the main 8cc header file.
 #include "8cc.h"
 
 static char *infile;
@@ -103,15 +123,39 @@ static void parse_m_arg(char *s) {
         error("Only 64 is allowed for -m, but got %s", s);
 }
 
+// Function to parse the provided command line options.
 static void parseopt(int argc, char **argv) {
+
+    // Create a buffer called 'cppdefs'.
     cppdefs = make_buffer();
+
+    // 'Infinite' loop
     for (;;) {
+
+        // getopt() is a C library function used to parse command-line options.
+        // Essentially, it is invoked multiple times to get each argument that
+        // is an argument. The first argument is the index of the next argument,
+        // which gets decremented, the second argument is the arguments 
+        // themselves, and the final argument is a string containing characters
+        // that define which arguments are legit. If the character is followed
+        // by a ':', then the option needs an argument. 
         int opt = getopt(argc, argv, "I:ED:O:SU:W:acd:f:gm:o:hw");
+        
+        // getopt() returns -1 when there are no more options.
         if (opt == -1)
             break;
+
+        // Switch on the option that was just parsed.
         switch (opt) {
+
+        // 'I' is an option to add a file to the include path.
         case 'I': add_include_path(optarg); break;
+
+        // 'E' is an option to run *only* the C preprocessor. Presumably, this was
+        // useful during development of the preprocessor.
         case 'E': cpponly = true; break;
+
+        // 'D' is an option to define a macro
         case 'D': {
             char *p = strchr(optarg, '=');
             if (p)
@@ -164,11 +208,33 @@ static void preprocess() {
     exit(0);
 }
 
+// The entry point of the program!
 int main(int argc, char **argv) {
+
+    // Typically, I/O functionality is implemented with 'buffering', which means
+    // that calls to (say) printf() are stored in a buffer until that buffer is
+    // filled up, at which point the system call is made to actually print to
+    // stdout. This is done because system calls are expensive (1000s of cycles)
+    // compared to function calls.
+    // This line code sets the buffer for stdout to be NULL, which means that
+    // buffering shouldn't happen at all for this program.
     setbuf(stdout, NULL);
+    
+    // atexit() does what you would expect, if you were able to actually parse
+    // the name. atexit() = at_exit(); the first line ensures that the temp 
+    // files are deleted when the program exits. The second line is called if
+    // atexit() returns a nonzero value (i.e. an error has occurred).
+    // perror() takes the name of a function that was called, in this case
+    // it was atexit(), and then prints the current value of 'errno' 
+    // (a POSIX variable) converted into a human-readable error message for the
+    // given function.
     if (atexit(delete_temp_files))
         perror("atexit");
+    
+    // Call to parse the provided command-line options.
     parseopt(argc, argv);
+
+
     lex_init(infile);
     cpp_init();
     parse_init();
