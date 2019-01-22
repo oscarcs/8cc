@@ -155,37 +155,78 @@ static void parseopt(int argc, char **argv) {
         // useful during development of the preprocessor.
         case 'E': cpponly = true; break;
 
-        // 'D' is an option to define a macro
+        // 'D' is an option to define a macro. 
         case 'D': {
+            // The macro definition is passed on the command line in the format
+            // x=y, so we use strchr() to obtain a pointer to the first occurrence
+            // of the = character.
             char *p = strchr(optarg, '=');
+
+            // If the = was is in the macro definition, we replace it with a 
+            // space in order to make a proper C macro definition out of it.
             if (p)
                 *p = ' ';
+
+            // Add the definition into the preprocessor definitions buffer.
             buf_printf(cppdefs, "#define %s\n", optarg);
             break;
         }
+
+        // This option does nothing.
         case 'O': break;
+
+        // This option sets the 'dumpasm' flag, which causes the assembly to be
+        // dumped instead of being assembled.
         case 'S': dumpasm = true; break;
+
+        // Undefine a particular name.
         case 'U':
+            // Print a C #undef macro into the preprocessor definitions buffer.
             buf_printf(cppdefs, "#undef %s\n", optarg);
             break;
+
+        // Flags that start with capital W are warnings-related, so we parse 
+        // them into 'Wall', 'Werror', etc.
         case 'W': parse_warnings_arg(optarg); break;
+
+        // Option to stop the linker from running.
         case 'c': dontlink = true; break;
+
+        // There are a few options that start with 'f', so we separate them
+        // into their own parser.
         case 'f': parse_f_arg(optarg); break;
+        
+        // ... same with the 'm' options.
         case 'm': parse_m_arg(optarg); break;
+
+        // This option does nothing.
         case 'g': break;
+
+        // This option defines the output file.
         case 'o': outfile = optarg; break;
+
+        // 'w' disables all warnings.
         case 'w': enable_warning = false; break;
+
+        // Prints the usage information.
         case 'h':
             usage(0);
+
+        // Any other invalid option prints the information. 
         default:
             usage(1);
         }
     }
+
+    // optind is the index of the next argument to be parsed. If the number of
+    // options provided was invalid, we print the usage information.
     if (optind != argc - 1)
         usage(1);
 
     if (!dumpast && !cpponly && !dumpasm && !dontlink)
         error("One of -a, -c, -E or -S must be specified");
+
+    // The input file should be the final argument.
     infile = argv[optind];
 }
 
