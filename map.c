@@ -7,8 +7,15 @@
 #include "8cc.h"
 
 #define INIT_SIZE 16
+
+// This is a macro that defines a pointer value that is greater than any other
+// address on the system, and (presumably) an address that we can't write to.
+// It utilizes undefined C behaviour: it should underflow (void *) to be the 
+// maximum value.   
 #define TOMBSTONE ((void *)-1)
 
+// Hash function. Specifically, this function implements the FNV hash, a fast
+// non-cryptographic hash function.
 static uint32_t hash(char *p) {
     // FNV hash
     uint32_t r = 2166136261;
@@ -19,11 +26,21 @@ static uint32_t hash(char *p) {
     return r;
 }
 
+// Create a map of a certain size.
 static Map *do_make_map(Map *parent, int size) {
+    // Allocate memory for the map struct.
     Map *r = malloc(sizeof(Map));
+
+    // Set the parent of the new map to the provided map.
     r->parent = parent;
+
+    // calloc() allocates memory for a number of items and zeroes it.
+    // Note that the keys are a pointer to char, while the values can be
+    // anything (pointer to void).
     r->key = calloc(size, sizeof(char *));
     r->val = calloc(size, sizeof(void *));
+
+    // Set the size, number of elements, number of used and return.
     r->size = size;
     r->nelem = 0;
     r->nused = 0;
