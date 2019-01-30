@@ -240,37 +240,64 @@ static void skip_string() {
 void skip_cond_incl() {
     int nest = 0;
     for (;;) {
+        // 'bol' stands for 'beginning of line'.
         bool bol = (current_file()->column == 1);
         skip_space();
         int c = readc();
+
+        // If we reached the end of the file, we're done.
         if (c == EOF)
             return;
+
+        // Skip char literals.
         if (c == '\'') {
             skip_char();
             continue;
         }
+
+        // Skip string literals.
         if (c == '\"') {
             skip_string();
             continue;
         }
+
+        // Detect whether we've found a preprocessor directive, which starts 
+        // with # on the first column.
         if (c != '#' || !bol)
             continue;
+
+        // Lex a token.
         int column = current_file()->column - 1;
         Token *tok = lex();
+        
+        // Check that the current token is a identifier. 
         if (tok->kind != TIDENT)
             continue;
+
+        // Check for #else, #elif, and #endif directives with a nesting level 
+        // of 0. One of these directives at a nesting level of 0 is an error in
+        // the input, so we need to try something else:
         if (!nest && (is_ident(tok, "else") || is_ident(tok, "elif") || is_ident(tok, "endif"))) {
+            // Unget the token we just lexed.
             unget_token(tok);
+
+            // Create a hash token and then unget it, putting it in the buffer.
             Token *hash = make_keyword('#');
             hash->bol = true;
             hash->column = column;
             unget_token(hash);
+
             return;
         }
+
+        // Check for #if, #idef, and #ifndef directives. We increase the nesting
+        // level in this case.
         if (is_ident(tok, "if") || is_ident(tok, "ifdef") || is_ident(tok, "ifndef"))
             nest++;
         else if (nest && is_ident(tok, "endif"))
             nest--;
+        
+        // Skip the rest of the the line.
         skip_line();
     }
 }
@@ -278,22 +305,39 @@ void skip_cond_incl() {
 // Reads a number literal. Lexer's grammar on numbers is not strict.
 // Integers and floating point numbers and different base numbers are not distinguished.
 static Token *read_number(char c) {
+    // Create a new buffer to store characters in.
     Buffer *b = make_buffer();
+
+    // Write the first character.
     buf_write(b, c);
     char last = c;
+
     for (;;) {
         int c = readc();
+
+        // strchr() searches through a string (the first argument) until it finds
+        // an instance of the character provided as the second argument.
+        // The two calls to strchr() here look for e/E/p/P, which are exponent
+        // signs, and +/-, which is the sign.
         bool flonum = strchr("eEpP", last) && strchr("+-", c);
+
+        // Characters in a numeric literal have to consist of digits, alphabetic
+        // characters, periods, and the characters above.
         if (!isdigit(c) && !isalpha(c) && c != '.' && !flonum) {
+            // If we encounter a character that can't be in a numeric literal,
+            // we unread it, close the buffer with a \0, and return the token.
             unreadc(c);
             buf_write(b, '\0');
             return make_number(buf_body(b));
         }
+
+        // Write a character into the buffer.
         buf_write(b, c);
         last = c;
     }
 }
 
+// Octal numbers, unsurprisingly, are only allowed to contain the digits 0-7.
 static bool nextoct() {
     int c = peek();
     return '0' <= c && c <= '7';
@@ -312,10 +356,20 @@ static int read_octal_char(int c) {
 
 // Reads a \x escape sequence.
 static int read_hex_char() {
+    // Get the position two positions previous to the current one, i.e. the
+    // position of the start of the escape sequence.
     Pos p = get_pos(-2);
     int c = readc();
+
+    // isxdigit() is a C standard library function that checks if a character
+    // is a hexadecimal digit.
     if (!isxdigit(c))
         errorp(p, "\\x is not followed by a hexadecimal character: %c", c);
+    
+    // Now we actually parse the value. r records the current value. At each
+    // iteration, we parse the next character, converting the value of the
+    // char in ASCII to a corresponding value and then shifting it the correct
+    // amount:
     int r = 0;
     for (;; c = readc()) {
         switch (c) {
@@ -338,7 +392,7 @@ static bool is_valid_ucn(unsigned int c) {
     return 0xA0 <= c || c == '$' || c == '@' || c == '`';
 }
 
-// Reads \u or \U escape sequences. len is 4 or 8, respecitvely.
+// Reads \u or \U escape sequences. len is 4 or 8, respectively.
 static int read_universal_char(int len) {
     Pos p = get_pos(-2);
     unsigned int r = 0;
