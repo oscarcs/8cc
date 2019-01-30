@@ -183,9 +183,9 @@ void map_put(Map *m, char *key, void *val) {
             m->val[i] = val;
             m->nelem++;
 
-            // Keys that are removed are set to the TOMBSTONE instead of NULL,
-            // because 'nused' is a measure of how many slots in the hashmap have
-            // been used at any point, rather than merely at the current time.
+            // 'nused' is a measure of how many slots in the hashmap have
+            // been used at any point, rather than merely at the current time,
+            // so it is calculated based on the number of new NULL entries.
             if (k == NULL)
                 m->nused++;
             return;
