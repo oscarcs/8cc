@@ -27,6 +27,7 @@
 #include <string.h>
 #include "8cc.h"
 
+// EMPTY_VECTOR is a macro defined in the 8cc header file.
 static Vector *buffers = &EMPTY_VECTOR;
 static Token *space_token = &(Token){ TSPACE };
 static Token *newline_token = &(Token){ TNEWLINE };
@@ -50,17 +51,28 @@ static char *pos_string(Pos *p) {
 static void skip_block_comment(void);
 
 void lex_init(char *filename) {
+
+    // A vector is a resizeable container of pointers. Here, we create a 
+    // new empty vector and push it onto the 'buffers' vector.
     vec_push(buffers, make_vector());
+
+    // If the filename equals "-"...
     if (!strcmp(filename, "-")) {
+        // Push stdin onto the files vector.
         stream_push(make_file(stdin, "-"));
         return;
     }
+
+    // Otherwise, open the specified file.
     FILE *fp = fopen(filename, "r");
     if (!fp)
         error("Cannot open %s: %s", filename, strerror(errno));
+
+    // Push the file onto the vector.
     stream_push(make_file(fp, filename));
 }
 
+// Get the position in the current file, including a delta from the current column.
 static Pos get_pos(int delta) {
     File *f = current_file();
     return (Pos){ f->line, f->column + delta };
@@ -70,52 +82,76 @@ static void mark() {
     pos = get_pos(0);
 }
 
+// Make a token struct.
 static Token *make_token(Token *tmpl) {
+    // Allocate memory for the token.
     Token *r = malloc(sizeof(Token));
+
+    // Set the token's contents to be like the provided template.
     *r = *tmpl;
+
+    // Hideset is used by the preprocessor for macro expansion.
     r->hideset = NULL;
+
+    // Set file-related properties on the token. 
     File *f = current_file();
     r->file = f;
     r->line = pos.line;
     r->column = pos.column;
+
+    // Index of the token within the file.
     r->count = f->ntok++;
     return r;
 }
 
+// Make an identifier token.
 static Token *make_ident(char *p) {
     return make_token(&(Token){ TIDENT, .sval = p });
 }
 
+// Make a string token.
 static Token *make_strtok(char *s, int len, int enc) {
     return make_token(&(Token){ TSTRING, .sval = s, .slen = len, .enc = enc });
 }
 
+// Make a keyword token.
 static Token *make_keyword(int id) {
     return make_token(&(Token){ TKEYWORD, .id = id });
 }
 
+// Make a number token.
 static Token *make_number(char *s) {
     return make_token(&(Token){ TNUMBER, .sval = s });
 }
 
+// Make an invalid token.
 static Token *make_invalid(char c) {
     return make_token(&(Token){ TINVALID, .c = c });
 }
 
+// Make a char token.
 static Token *make_char(int c, int enc) {
     return make_token(&(Token){ TCHAR, .c = c, .enc = enc });
 }
 
+// Check if a given character is a whitespace character.
 static bool iswhitespace(int c) {
+    // ' ' is obviously a space.
+    // '\t' is the tab character.
+    // '\f' is the form feed character, which was used in ancient times as a
+    // page break character.
+    // '\v' is the vertical tab character, which moved the printer vertically.
     return c == ' ' || c == '\t' || c == '\f' || c == '\v';
 }
 
+// Look at the next char and then immediately unread it.
 static int peek() {
     int r = readc();
     unreadc(r);
     return r;
 }
 
+// Check that the next character conforms to expectation.
 static bool next(int expect) {
     int c = readc();
     if (c == expect)
@@ -124,7 +160,9 @@ static bool next(int expect) {
     return false;
 }
 
+// Skip a line of input.
 static void skip_line() {
+    // Continue reading input until we encounter EOF or a newline.
     for (;;) {
         int c = readc();
         if (c == EOF)
@@ -136,17 +174,24 @@ static void skip_line() {
     }
 }
 
+// Skip space characters, see the function below.
 static bool do_skip_space() {
     int c = readc();
     if (c == EOF)
         return false;
+
+    // Skip a space character.
     if (iswhitespace(c))
         return true;
+
+    // Skip comments.
     if (c == '/') {
+        // Block comments start with /*
         if (next('*')) {
             skip_block_comment();
             return true;
         }
+        // Line comments start with //
         if (next('/')) {
             skip_line();
             return true;
@@ -161,19 +206,27 @@ static bool do_skip_space() {
 static bool skip_space() {
     if (!do_skip_space())
         return false;
+    
+    // Continue skipping spaces until there are no more spaces to skip.
     while (do_skip_space());
     return true;
 }
 
+// Skip reading a character literal (like '\t').
 static void skip_char() {
+    // Escaped characters have a \ that needs to be skipped.
     if (readc() == '\\')
         readc();
     int c = readc();
+
+    // Skip characters until a ' or EOF is reached.
     while (c != EOF && c != '\'')
         c = readc();
 }
 
+// Skip a string (like "hello").
 static void skip_string() {
+    // Continue reading until " or EOF is reached.
     for (int c = readc(); c != EOF && c != '"'; c = readc())
         if (c == '\\')
             readc();
@@ -593,6 +646,7 @@ Token *lex_string(char *s) {
     return r;
 }
 
+// The main lexer function.
 Token *lex() {
     Vector *buf = vec_tail(buffers);
     if (vec_len(buf) > 0)
