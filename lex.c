@@ -398,6 +398,8 @@ static int read_universal_char(int len) {
     unsigned int r = 0;
     for (int i = 0; i < len; i++) {
         char c = readc();
+
+        // Functions in exactly the same way as the switch statement above.
         switch (c) {
         case '0' ... '9': r = (r << 4) | (c - '0'); continue;
         case 'a' ... 'f': r = (r << 4) | (c - 'a' + 10); continue;
@@ -405,11 +407,19 @@ static int read_universal_char(int len) {
         default: errorp(p, "invalid universal character: %c", c);
         }
     }
+    // Use the function defined above to check that this is a valid unicode
+    // codepoint.
     if (!is_valid_ucn(r))
         errorp(p, "invalid universal character: \\%c%0*x", (len == 4) ? 'u' : 'U', len, r);
     return r;
 }
 
+// Perhaps the most interesting function in the entire compiler; the original 
+// comment below does a good job of explaining what is happening. It's worth 
+// pointing out, though, that this is not actually a 'tautology' as such; the
+// information is present in the binary used to compile this compiler.
+// I wonder if a more general version of this principle could be useful for
+// some other purpose.
 static int read_escaped_char() {
     Pos p = get_pos(-1);
     int c = readc();
@@ -441,39 +451,63 @@ static int read_escaped_char() {
     return c;
 }
 
+// Read a character literal.
 static Token *read_char(int enc) {
+    // Read a normal character.
     int c = readc();
+
+    // If the character is a \, we need to treat it as an escape character.
     int r = (c == '\\') ? read_escaped_char() : c;
     c = readc();
+
+    // The last character needs to be the quote mark.
     if (c != '\'')
         errorp(pos, "unterminated char");
+    
+    // ENC_NONE is a character without any special encoding, so we can use the
+    // normal C datatype 'char'.
     if (enc == ENC_NONE)
         return make_char((char)r, enc);
+
+    // Otherwise return a character literal with a certain encoding.
     return make_char(r, enc);
 }
 
 // Reads a string literal.
 static Token *read_string(int enc) {
+    // Make a buffer to keep the string in.
     Buffer *b = make_buffer();
     for (;;) {
         int c = readc();
         if (c == EOF)
             errorp(pos, "unterminated string");
+
+        // Keep reading until we encounter a ", indicating that the string is
+        // finished.
         if (c == '"')
             break;
+        
+        // If the current character isn't an escape character, we're in the clear;
+        // we can read the next character.
         if (c != '\\') {
             buf_write(b, c);
             continue;
         }
+        // Check to see if the escape character is unicode.
         bool isucs = (peek() == 'u' || peek() == 'U');
         c = read_escaped_char();
+
+        // If it is unicode, write utf8.
         if (isucs) {
             write_utf8(b, c);
             continue;
         }
         buf_write(b, c);
     }
+    // End the string.
     buf_write(b, '\0');
+    
+    // Make a token from the buffer.
     return make_strtok(buf_body(b), buf_len(b), enc);
 }
 
