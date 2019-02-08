@@ -511,49 +511,83 @@ static Token *read_string(int enc) {
     return make_strtok(buf_body(b), buf_len(b), enc);
 }
 
+// Read an identifier.
 static Token *read_ident(char c) {
+    // Create a text buffer to store the identifier, and then write the current 
+    // character
     Buffer *b = make_buffer();
     buf_write(b, c);
+
     for (;;) {
+        // Read the next character.
         c = readc();
+
+        // isalnum() is a C standard library function that checks if a given 
+        // character is alphanumeric.
+        // (c & 0x80) checks to see if the 8th bit is set, presumably to capture
+        // characters that are outside the regular 7-bit ASCII range.        
         if (isalnum(c) || (c & 0x80) || c == '_' || c == '$') {
             buf_write(b, c);
             continue;
         }
+
         // C11 6.4.2.1: \u or \U characters (universal-character-name)
         // are allowed to be part of identifiers.
         if (c == '\\' && (peek() == 'u' || peek() == 'U')) {
             write_utf8(b, read_escaped_char());
             continue;
         }
+
+        // If the found character isn't a valid identifier character, unread it
+        // and finish the string with a \0.
         unreadc(c);
         buf_write(b, '\0');
+
+        // Create the identifier token.
         return make_ident(buf_body(b));
     }
 }
 
+// Skip through a block comment.
 static void skip_block_comment() {
+    // Get the start of the comment (before the /*)
     Pos p = get_pos(-2);
+
+    // Flag to detect a */
     bool maybe_end = false;
     for (;;) {
         int c = readc();
+        
+        // If the next character is the end of the file without the comment
+        // being properly closed, we need to throw an error. 
         if (c == EOF)
             errorp(p, "premature end of block comment");
+
+        // If the current character is a / and the last character was * 
+        // (see below), then return.
         if (c == '/' && maybe_end)
             return;
         maybe_end = (c == '*');
     }
 }
 
+// For some reason, this comment is called 'read_hash_digraph()', which I don't
+// understand, because it also covers the digraph for }.
+// Maybe a better name would have been 'read_percent_digraph()'? 
+// The original comment follows:
+
 // Reads a digraph starting with '%'. Digraphs are alternative spellings
 // for some punctuation characters. They are useless in ASCII.
 // We implement this just for the standard compliance.
 // See C11 6.4.6p3 for the spec.
 static Token *read_hash_digraph() {
+    // %> is equivalent to }
     if (next('>'))
         return make_keyword('}');
+    // %: is equivalent to #
     if (next(':')) {
         if (next('%')) {
+            // ## is treated separately.
             if (next(':'))
                 return make_keyword(KHASHHASH);
             unreadc('%');
