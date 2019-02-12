@@ -78,6 +78,7 @@ static Pos get_pos(int delta) {
     return (Pos){ f->line, f->column + delta };
 }
 
+// Mark the current position.
 static void mark() {
     pos = get_pos(0);
 }
@@ -524,8 +525,11 @@ static Token *read_ident(char c) {
 
         // isalnum() is a C standard library function that checks if a given 
         // character is alphanumeric.
-        // (c & 0x80) checks to see if the 8th bit is set, presumably to capture
-        // characters that are outside the regular 7-bit ASCII range.        
+        // (c & 0x80) checks to see if the 8th bit is set, to capture
+        // characters that are outside the regular 7-bit ASCII range.
+        // These characters are (mostly) allowed as identifier names, subject
+        // to a long list of exceptions that the C standard defines. See the
+        // comment below.   
         if (isalnum(c) || (c & 0x80) || c == '_' || c == '$') {
             buf_write(b, c);
             continue;
@@ -571,9 +575,10 @@ static void skip_block_comment() {
     }
 }
 
-// For some reason, this comment is called 'read_hash_digraph()', which I don't
-// understand, because it also covers the digraph for }.
-// Maybe a better name would have been 'read_percent_digraph()'? 
+// For some reason, this comment is called 'read_hash_digraph()', which seems 
+// like a slight misnaming, because it also covers the digraph for }.
+// This is in its own function because of the special logic required to tokenize
+// the double-hash sequence.
 // The original comment follows:
 
 // Reads a digraph starting with '%'. Digraphs are alternative spellings
@@ -597,41 +602,100 @@ static Token *read_hash_digraph() {
     return NULL;
 }
 
+// Read an operator that consists of repeating characters. Basically, we look 
+// ahead at the next character, and determine whether it matches a given token.
 static Token *read_rep(char expect, int t1, int els) {
     return make_keyword(next(expect) ? t1 : els);
 }
 
+// Similar to the function above, except we provide two possible alternatives.
 static Token *read_rep2(char expect1, int t1, char expect2, int t2, char els) {
     if (next(expect1))
         return make_keyword(t1);
     return make_keyword(next(expect2) ? t2 : els);
 }
 
+// Read a token!
 static Token *do_read_token() {
     if (skip_space())
         return space_token;
+    
+    // Mark the location of the token we're about to tokenize.
     mark();
+
+    // Read the next character.
     int c = readc();
+
+    // Switch on the current character. This is the main switch statement of the
+    // tokenizer.
     switch (c) {
+    
+    // Newline (which, remember, have been normalized, so we can just handle a single case).
     case '\n': return newline_token;
+
+    // :> is the digraph for ]. Otherwise, we're just returning a :. 
     case ':': return make_keyword(next('>') ? ']' : ':');
+
+    // # and ##
     case '#': return make_keyword(next('#') ? KHASHHASH : '#');
+
+    // +, +=, and ++ need to be disambiguated.
     case '+': return read_rep2('+', OP_INC, '=', OP_A_ADD, '+');
+
+    // * and *=
     case '*': return read_rep('=', OP_A_MUL, '*');
+
+    // = and ==
     case '=': return read_rep('=', OP_EQ, '=');
+
+    // ! and !=
     case '!': return read_rep('=', OP_NE, '!');
+
+    // &, &=, and && are all possible
     case '&': return read_rep2('&', OP_LOGAND, '=', OP_A_AND, '&');
+    
+    // |, ||, and |=
     case '|': return read_rep2('|', OP_LOGOR, '=', OP_A_OR, '|');
+
+    // ^ and ^=
     case '^': return read_rep('=', OP_A_XOR, '^');
+
+    // " marks the start of a string
     case '"': return read_string(ENC_NONE);
+
+    // ' marks the start of a character
     case '\'': return read_char(ENC_NONE);
+
+    // / and /=. For some reason, this uses make_keyword() instead of read_rep().
+    // Given how simple read_rep() is, I suppose it doesn't really matter either way.
     case '/': return make_keyword(next('=') ? OP_A_DIV : '/');
+
+    // Valid identifier characters. The first two lines define the ordinary
+    // ASCII characters that are allowed.
+    // The third line allows identifiers to begin with characters outside the
+    // the 7-bit ASCII range, i.e. between 0x80 and 0xFD. This is actually 
+    // problematic with regard to the C11 spec, which gives (in Annex D) certain
+    // ranges of characters that are not allowed in identifiers. The question of
+    // 'what is a valid C identifier character' gets really messy, really fast, 
+    // so it's understandable that we basically ignore the spec in this case.
+    // If you're interested in more information, there's a good StackOverflow
+    // answer here:
+    // https://stackoverflow.com/questions/34319000/
     case 'a' ... 't': case 'v' ... 'z': case 'A' ... 'K':
     case 'M' ... 'T': case 'V' ... 'Z': case '_': case '$':
     case 0x80 ... 0xFD:
         return read_ident(c);
+    
+    // If the next token begins with a number, we tokenize it as such. That 
+    // means that identifiers tokenized with 8cc can't begin with a numeric 
+    // character. This is allowed by the spec, which says that it is optional
+    // for a conforming C compiler implementation to support beginning identifiers
+    // with a numeric character.
     case '0' ... '9':
         return read_number(c);
+    
+    // String and character literals can have a L or U before them, specifying 
+    // that they are  
     case 'L': case 'U': {
         // Wide/char32_t character/string literal
         int enc = (c == 'L') ? ENC_WCHAR : ENC_CHAR32;
