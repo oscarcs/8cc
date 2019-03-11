@@ -694,15 +694,18 @@ static Token *do_read_token() {
     case '0' ... '9':
         return read_number(c);
     
-    // String and character literals can have a L or U before them, specifying 
-    // that they are  
+    // A string or character literal with an 'L' before it is comprised of wide
+    // characters; a string with a 'U' in front of it is comprised of 32-bit
+    // Unicode characters.
     case 'L': case 'U': {
         // Wide/char32_t character/string literal
         int enc = (c == 'L') ? ENC_WCHAR : ENC_CHAR32;
         if (next('"'))  return read_string(enc);
         if (next('\'')) return read_char(enc);
+        // Otherwise, read an identifier.
         return read_ident(c);
     }
+    // A string with a 'u' in front could have 16- or 32-bit characters in it. 
     case 'u':
         if (next('"')) return read_string(ENC_CHAR16);
         if (next('\'')) return read_char(ENC_CHAR16);
@@ -712,7 +715,11 @@ static Token *do_read_token() {
                 return read_string(ENC_UTF8);
             unreadc('8');
         }
+        // Otherwise, read an identifier.
         return read_ident(c);
+
+    // Floating point literal, or the variadic function macro / GCC extension 
+    // '...', or a '..' identifier (apparently this is valid?).  
     case '.':
         if (isdigit(peek()))
             return read_number(c);
@@ -722,28 +729,58 @@ static Token *do_read_token() {
             return make_ident("..");
         }
         return make_keyword('.');
+    
+    // Just make the keyword:
     case '(': case ')': case ',': case ';': case '[': case ']': case '{':
     case '}': case '?': case '~':
         return make_keyword(c);
+    
     case '-':
+        // --
         if (next('-')) return make_keyword(OP_DEC);
+        
+        // ->
         if (next('>')) return make_keyword(OP_ARROW);
+        
+        // -=
         if (next('=')) return make_keyword(OP_A_SUB);
+        
+        // -
         return make_keyword('-');
+
     case '<':
+        // << or <<=
         if (next('<')) return read_rep('=', OP_A_SAL, OP_SAL);
+        
+        // <=
         if (next('=')) return make_keyword(OP_LE);
+        
+        // <:, which is a digraph for [
         if (next(':')) return make_keyword('[');
+        
+        // <%, which is a digraph for {
         if (next('%')) return make_keyword('{');
+
+        // <
         return make_keyword('<');
+    
     case '>':
+        // >=
         if (next('=')) return make_keyword(OP_GE);
+        
+        // >> or >>=
         if (next('>')) return read_rep('=', OP_A_SAR, OP_SAR);
+        
+        // >
         return make_keyword('>');
+    
     case '%': {
+        // Digraphs beginning with %, see above
         Token *tok = read_hash_digraph();
         if (tok)
             return tok;
+        
+        // % or %=
         return read_rep('=', OP_A_MOD, '%');
     }
     case EOF:
@@ -752,6 +789,7 @@ static Token *do_read_token() {
     }
 }
 
+// Check if the text buffer is empty.
 static bool buffer_empty() {
     return vec_len(buffers) == 1 && vec_len(vec_head(buffers)) == 0;
 }
